@@ -1,0 +1,14 @@
+# macOS
+.DS_Store
+
+# Agent / editor local state
+.agents/
+.claude/
+.zcode/
+AGENTS.md
+CLAUDE.md
+*.local.md
+
+# Logs and temp files
+*.log
+*.tmp
