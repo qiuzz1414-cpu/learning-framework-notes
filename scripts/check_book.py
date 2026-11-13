@@ -29,9 +29,11 @@ DEF_EX = re.compile(r'^\s*(?:[-*]\s+)?`ch(\d+)-ex-(\d{3})(?=[`　\s])')
 
 GAP_TYPES = {'素材未覆盖', '答案缺失', '素材冲突存疑', '页码不明'}
 
-# 模板占位符：成书模式产物里不该残留
-PLACEHOLDERS = ['{主题}', '{填定值}', '{章 1 主题}', '{章 2 主题}', '{公式占位}',
-                '{章 A}', '{章 B}', '{章 C}', '{章 D}', '{套路名}', '{题面}']
+# 模板占位符：成书模式产物里不该残留（{公式占位} 等多学科变体也要覆盖）
+PLACEHOLDERS = ['{主题}', '{填定值}', '{章 1 主题}', '{章 2 主题}',
+                '{公式占位}', '{关键史实/判据}', '{关键 API/复杂度}',
+                '{章 A}', '{章 B}', '{章 C}', '{章 D}', '{套路名}', '{题面}',
+                '{按学科列出不许跳的步骤类型}']
 
 
 class Report:
@@ -291,9 +293,7 @@ def check_book(root, rep):
                 rep.warn('B11', f'{rel(path, root)}:{lineno}',
                          f'成书产物中残留模板占位符 {needle}')
 
-    # B12 套路七步完整
-    steps = ['何时使用', '典型例题', '思路推演', '形式化解答',
-             '套路提炼', '易错点', '关联编号']
+    # B12 套路七步完整（第 4 步兼容旧名「形式化解答」，新名为「示范解答」）
     for path in scan_files:
         if not path.startswith(chapters_dir):
             continue
@@ -303,7 +303,15 @@ def check_book(root, rep):
         for idx, (lineno, _label) in enumerate(starts):
             end = starts[idx + 1][0] if idx + 1 < len(starts) else len(lines)
             body = '\n'.join(lines[lineno:end])
-            missing = [s for s in steps if s not in body]
+            missing = []
+            for step in ('何时使用', '典型例题', '思路推演', '套路提炼', '关联编号'):
+                if step not in body:
+                    missing.append(step)
+            # 易错点与示范解答需匹配加粗步骤标记，避免被「易错点X」这类畸形写法蒙混
+            if '**易错点**' not in body:
+                missing.append('易错点')
+            if '**示范解答**' not in body and '**形式化解答**' not in body:
+                missing.append('示范解答')
             if missing:
                 rep.error('B12', f'{rel(path, root)}:{lineno + 1}',
                           f'套路缺少步骤：{missing}')
@@ -316,11 +324,13 @@ def check_book(root, rep):
                 rep.error('B13', f'{rel(path, root)}:{block[0][0]}',
                           f'表格列数不一致：{sorted(widths)}')
 
-    # B14 题号三位
-    for cid in defs_ex:
-        n = cid.rsplit('-', 1)[1]
-        if len(n) != 3:
-            rep.error('B14', cid, '题号须为三位（chX-ex-001）')
+    # B14 题号三位（直接扫文本，不依赖定义行是否被识别）
+    for path in scan_files:
+        for lineno, line in enumerate(file_texts[path].split('\n'), 1):
+            for mm in re.finditer(r'ch\d+-ex-(\d+)(?![0-9])', line):
+                if len(mm.group(1)) != 3:
+                    rep.error('B14', f'{rel(path, root)}:{lineno}',
+                              f'题号 {mm.group(0)} 须为三位补零（chX-ex-001）')
 
 
 # ---------------------------------------------------------------- 自校验
@@ -413,6 +423,22 @@ def check_self(root, rep):
     # S08 SKILL.md 必须把检查器写成收尾必做项
     if 'check_book.py' not in skill:
         rep.error('S08', 'SKILL.md', '未将 check_book.py 写为必做检查步骤')
+
+    # S09 学科无关性：规范必须保留映射表，术语不得只留数理形态
+    if '学科无关' not in spec:
+        rep.error('S09', 'assets/编写规范.md', '缺少「学科无关原则」声明')
+    for token in ('论证链', '核心命题', '论证策略'):
+        if token not in spec:
+            rep.error('S09', 'assets/编写规范.md', f'学科无关映射表缺「{token}」')
+    # S09 骨架与章模板必须承认多学科形态，不能只写「公式」「定理」
+    if '{公式占位}' in skeleton and '{关键史实/判据}' not in skeleton:
+        rep.error('S09', 'assets/全书骨架.md',
+                  '速查总表只保留了数理形态（公式占位），缺人文/工程变体')
+    # 只检查 X.2 的固定顺序行，说明性引用不算
+    for line in chapter.split('\n'):
+        if '作用先说' in line and '定义/定理' in line and '核心概念' not in line:
+            rep.error('S09', 'assets/章模板.md',
+                      'X.2 仍只写数理形态「定义/定理」，应为「核心概念/命题」')
 
 
 # ---------------------------------------------------------------- 入口
