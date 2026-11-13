@@ -12,3 +12,7 @@ CLAUDE.md
 # Logs and temp files
 *.log
 *.tmp
+
+# Python
+__pycache__/
+*.pyc
